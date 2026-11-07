@@ -41,6 +41,27 @@ public class DocumentsController(DocumentService documentService) : ControllerBa
         return text is null ? NotFound() : text;
     }
 
+    /// <summary>The stored chunks, in order. Empty until processing has finished.</summary>
+    [HttpGet("{id:guid}/chunks")]
+    [ProducesResponseType<IReadOnlyList<ChunkDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<ChunkDto>>> GetChunks(Guid id, CancellationToken cancellationToken)
+    {
+        var chunks = await documentService.GetChunksAsync(id, cancellationToken);
+        return chunks is null ? NotFound() : Ok(chunks);
+    }
+
+    /// <summary>Queues a failed (or still waiting) document for processing again.</summary>
+    [HttpPost("{id:guid}/process")]
+    [ProducesResponseType<DocumentDto>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<DocumentDto>> Process(Guid id, CancellationToken cancellationToken)
+    {
+        var document = await documentService.RequestProcessingAsync(id, cancellationToken);
+        return document is null ? NotFound() : AcceptedAtAction(nameof(GetById), new { id }, document);
+    }
+
     [HttpGet]
     [ProducesResponseType<PagedResult<DocumentDto>>(StatusCodes.Status200OK)]
     public Task<PagedResult<DocumentDto>> List(int page = 1, int pageSize = 20, CancellationToken cancellationToken = default) =>

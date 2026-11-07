@@ -2,6 +2,7 @@ using DocumentAssistant.Application.Abstractions;
 using DocumentAssistant.Application.Common;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
+using DocumentAssistant.Domain.Enums;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +12,7 @@ public class DocumentService(
     IDocumentRepository repository,
     IFileStorage fileStorage,
     IPdfTextExtractor textExtractor,
+    IDocumentProcessingQueue processingQueue,
     IOptions<DocumentUploadOptions> options,
     ILogger<DocumentService> logger)
 {
@@ -23,7 +25,8 @@ public class DocumentService(
     public static string StorageKeyFor(Guid documentId) => $"{documentId}.pdf";
 
     /// <summary>
-    /// Validates the file, stores it and records a new document in the Uploaded state.
+    /// Validates the file, stores it, records a new document in the Uploaded state and queues it
+    /// for background processing.
     /// </summary>
     /// <exception cref="ValidationFailedException">The file is empty, too large or not a PDF.</exception>
     public async Task<DocumentDto> UploadAsync(
@@ -78,7 +81,38 @@ public class DocumentService(
         }
 
         logger.LogInformation("Uploaded document {DocumentId} ({FileName}, {Size} bytes)", document.Id, fileName, length);
+
+        // If the app stops before the worker picks this up, startup recovery re-queues it.
+        await processingQueue.EnqueueAsync(document.Id, cancellationToken);
+
         return DocumentDto.FromEntity(document);
+    }
+
+    /// <summary>
+    /// Queues a document for (re)processing. Returns null if the document does not exist.
+    /// </summary>
+    /// <exception cref="ConflictException">The document is already processing or ready.</exception>
+    public async Task<DocumentDto?> RequestProcessingAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var document = await repository.GetByIdAsync(id, cancellationToken);
+        if (document is null)
+            return null;
+
+        if (document.Status is not (DocumentStatus.Uploaded or DocumentStatus.Failed))
+            throw new ConflictException($"The document cannot be processed while its status is {document.Status}.");
+
+        await processingQueue.EnqueueAsync(document.Id, cancellationToken);
+        return DocumentDto.FromEntity(document);
+    }
+
+    /// <summary>Returns null if the document does not exist.</summary>
+    public async Task<IReadOnlyList<ChunkDto>?> GetChunksAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (await repository.GetByIdAsync(id, cancellationToken) is null)
+            return null;
+
+        var chunks = await repository.GetChunksAsync(id, cancellationToken);
+        return chunks.Select(ChunkDto.FromEntity).ToList();
     }
 
     public async Task<DocumentDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)

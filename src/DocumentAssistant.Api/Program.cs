@@ -1,6 +1,7 @@
 using DocumentAssistant.Api.ErrorHandling;
 using DocumentAssistant.Application;
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Text;
 using DocumentAssistant.Infrastructure;
 using Microsoft.AspNetCore.Http.Features;
 
@@ -22,6 +23,8 @@ builder.Services.Configure<DocumentUploadOptions>(uploadSection);
 var maxRequestBytes = (uploadSection.Get<DocumentUploadOptions>() ?? new()).MaxFileSizeBytes + 1024 * 1024;
 builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = maxRequestBytes);
 builder.Services.Configure<FormOptions>(form => form.MultipartBodyLengthLimit = maxRequestBytes);
+
+builder.Services.Configure<ChunkingOptions>(builder.Configuration.GetSection(ChunkingOptions.SectionName));
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();

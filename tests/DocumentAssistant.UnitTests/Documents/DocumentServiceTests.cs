@@ -1,10 +1,10 @@
 using System.Text;
-using DocumentAssistant.Application.Abstractions;
 using DocumentAssistant.Application.Common;
 using DocumentAssistant.Application.Documents;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
 using DocumentAssistant.Domain.Enums;
+using DocumentAssistant.UnitTests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -17,6 +17,7 @@ public class DocumentServiceTests
     private readonly FakeDocumentRepository _repository = new();
     private readonly FakeFileStorage _storage = new();
     private readonly FakePdfTextExtractor _extractor = new();
+    private readonly FakeProcessingQueue _queue = new();
     private readonly DocumentService _service;
 
     public DocumentServiceTests()
@@ -25,6 +26,7 @@ public class DocumentServiceTests
             _repository,
             _storage,
             _extractor,
+            _queue,
             Options.Create(new DocumentUploadOptions { MaxFileSizeBytes = MaxSize }),
             NullLogger<DocumentService>.Instance);
     }
@@ -52,6 +54,87 @@ public class DocumentServiceTests
 
         // The whole file is stored, including the header bytes we peeked at.
         Assert.Equal(content.ToArray(), _storage.Files[DocumentService.StorageKeyFor(result.Id)]);
+
+        Assert.Equal([result.Id], _queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task Upload_Rejected_IsNotQueued()
+    {
+        await Assert.ThrowsAsync<ValidationFailedException>(() => Upload("notes.txt", Pdf()));
+
+        Assert.Empty(_queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task Upload_DatabaseSaveFails_IsNotQueued()
+    {
+        _repository.FailOnSave = true;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Upload("manual.pdf", Pdf()));
+
+        Assert.Empty(_queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task RequestProcessing_FailedDocument_IsQueued()
+    {
+        var document = await SavedDocumentWithStatus(DocumentStatus.Failed);
+
+        var result = await _service.RequestProcessingAsync(document.Id);
+
+        Assert.NotNull(result);
+        Assert.Equal([document.Id], _queue.Enqueued);
+    }
+
+    [Theory]
+    [InlineData(DocumentStatus.Processing)]
+    [InlineData(DocumentStatus.Ready)]
+    public async Task RequestProcessing_ProcessingOrReady_ThrowsConflict(DocumentStatus status)
+    {
+        var document = await SavedDocumentWithStatus(status);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _service.RequestProcessingAsync(document.Id));
+        Assert.Empty(_queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task RequestProcessing_UnknownDocument_ReturnsNull()
+    {
+        Assert.Null(await _service.RequestProcessingAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task GetChunks_ReturnsChunksInOrder_OrNullForUnknownDocument()
+    {
+        var document = await SavedDocumentWithStatus(DocumentStatus.Ready);
+
+        var chunks = await _service.GetChunksAsync(document.Id);
+
+        Assert.NotNull(chunks);
+        Assert.Equal([0, 1], chunks.Select(c => c.ChunkIndex));
+        Assert.Null(await _service.GetChunksAsync(Guid.NewGuid()));
+    }
+
+    /// <summary>Builds a document in the given status (Ready has two chunks) and saves it.</summary>
+    private async Task<Document> SavedDocumentWithStatus(DocumentStatus status)
+    {
+        var document = Document.Create("doc.pdf", DocumentService.PdfContentType, 10);
+        if (status != DocumentStatus.Uploaded)
+            document.StartProcessing();
+        if (status == DocumentStatus.Ready)
+        {
+            document.AddChunk(1, "second");
+            document.AddChunk(0, "first");
+            document.MarkReady();
+        }
+        if (status == DocumentStatus.Failed)
+            document.MarkFailed("broken");
+
+        _repository.Add(document);
+        await _repository.SaveChangesAsync();
+        _queue.Enqueued.Clear();
+        return document;
     }
 
     [Fact]
@@ -197,73 +280,6 @@ public class DocumentServiceTests
     {
         Assert.Empty(_repository.Documents);
         Assert.Empty(_storage.Files);
-    }
-
-    private sealed class FakeDocumentRepository : IDocumentRepository
-    {
-        private readonly List<Document> _pending = [];
-
-        public List<Document> Documents { get; } = [];
-        public int SaveCount { get; private set; }
-        public bool FailOnSave { get; set; }
-
-        public void Add(Document document) => _pending.Add(document);
-
-        public Task<Document?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-            Task.FromResult(Documents.FirstOrDefault(d => d.Id == id));
-
-        public Task<IReadOnlyList<Document>> ListAsync(int skip, int take, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<Document>>(Documents.Skip(skip).Take(take).ToList());
-
-        public Task<int> CountAsync(CancellationToken cancellationToken = default) => Task.FromResult(Documents.Count);
-
-        public Task SaveChangesAsync(CancellationToken cancellationToken = default)
-        {
-            if (FailOnSave)
-                throw new InvalidOperationException("Simulated database failure.");
-
-            Documents.AddRange(_pending);
-            _pending.Clear();
-            SaveCount++;
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeFileStorage : IFileStorage
-    {
-        public Dictionary<string, byte[]> Files { get; } = [];
-
-        public async Task SaveAsync(string key, Stream content, CancellationToken cancellationToken = default)
-        {
-            using var buffer = new MemoryStream();
-            await content.CopyToAsync(buffer, cancellationToken);
-            Files[key] = buffer.ToArray();
-        }
-
-        public Task<Stream> OpenReadAsync(string key, CancellationToken cancellationToken = default) =>
-            Task.FromResult<Stream>(new MemoryStream(Files[key]));
-
-        public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
-        {
-            Files.Remove(key);
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakePdfTextExtractor : IPdfTextExtractor
-    {
-        public ExtractedText Result { get; set; } = new([new ExtractedPage(1, "text")]);
-        public Exception? Failure { get; set; }
-        public byte[]? LastInput { get; private set; }
-
-        public async Task<ExtractedText> ExtractAsync(Stream pdf, CancellationToken cancellationToken = default)
-        {
-            using var buffer = new MemoryStream();
-            await pdf.CopyToAsync(buffer, cancellationToken);
-            LastInput = buffer.ToArray();
-
-            return Failure is null ? Result : throw Failure;
-        }
     }
 
     private sealed class NonSeekableStream(byte[] bytes) : MemoryStream(bytes)

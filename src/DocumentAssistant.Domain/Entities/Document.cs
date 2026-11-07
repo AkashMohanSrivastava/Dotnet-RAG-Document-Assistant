@@ -89,6 +89,10 @@ public class Document
         ProcessedAt = UtcNow();
     }
 
+    /// <summary>
+    /// Ends processing unsuccessfully. Chunks from the failed attempt are discarded, since a
+    /// partial set would give incomplete answers.
+    /// </summary>
     public void MarkFailed(string reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
@@ -96,6 +100,7 @@ public class Document
         if (Status != DocumentStatus.Processing)
             throw InvalidTransition(DocumentStatus.Failed);
 
+        _chunks.Clear();
         reason = reason.Trim();
         FailureReason = reason.Length > MaxFailureReasonLength ? reason[..MaxFailureReasonLength] : reason;
         Status = DocumentStatus.Failed;

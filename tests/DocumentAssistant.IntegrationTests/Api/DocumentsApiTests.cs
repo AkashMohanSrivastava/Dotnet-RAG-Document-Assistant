@@ -58,11 +58,80 @@ public sealed class DocumentsApiTests : IDisposable
         Assert.Equal($"/api/documents/{created.Id}", response.Headers.Location?.AbsolutePath);
         Assert.True(File.Exists(Path.Combine(_storageRoot, DocumentService.StorageKeyFor(created.Id))));
 
+        // The background worker may already be processing it, so compare everything but the status.
         var fetched = await _client.GetFromJsonAsync<DocumentDto>(response.Headers.Location);
-        Assert.Equal(created, fetched);
+        Assert.Equal(created, fetched! with { Status = created.Status, FailureReason = null, ProcessedAt = null });
 
         var list = await _client.GetFromJsonAsync<PagedResult<DocumentDto>>("/api/documents?pageSize=100");
         Assert.Contains(list!.Items, d => d.Id == created.Id);
+    }
+
+    [Fact]
+    public async Task UploadedPdf_IsProcessedInBackground_IntoChunks()
+    {
+        var pdf = TestPdfs.Create(
+            ["Installation", "Mount the bracket on a flat wall."],
+            ["Maintenance", "Clean the filter every three months."]);
+        var created = await UploadAsync("manual.pdf", pdf);
+
+        var processed = await WaitForFinalStatusAsync(created.Id);
+
+        Assert.Equal("Ready", processed.Status);
+        Assert.NotNull(processed.ProcessedAt);
+
+        var chunks = await _client.GetFromJsonAsync<List<ChunkDto>>($"/api/documents/{created.Id}/chunks");
+        Assert.Equal(2, chunks!.Count);
+        Assert.Equal(new ChunkDto(chunks[0].Id, 0, 1, "Installation\nMount the bracket on a flat wall.", false), chunks[0]);
+        Assert.Equal(new ChunkDto(chunks[1].Id, 1, 2, "Maintenance\nClean the filter every three months.", false), chunks[1]);
+    }
+
+    [Fact]
+    public async Task UploadedPdfWithoutText_EndsFailed_WithReason()
+    {
+        var created = await UploadAsync("scanned.pdf", TestPdfs.Create([], []));
+
+        var processed = await WaitForFinalStatusAsync(created.Id);
+
+        Assert.Equal("Failed", processed.Status);
+        Assert.Contains("no extractable text", processed.FailureReason);
+        Assert.Empty((await _client.GetFromJsonAsync<List<ChunkDto>>($"/api/documents/{created.Id}/chunks"))!);
+    }
+
+    [Fact]
+    public async Task Process_FailedDocument_Returns202_ReadyDocument_Returns409()
+    {
+        var failed = await UploadAsync("scanned.pdf", TestPdfs.Create([], []));
+        var ready = await UploadAsync("manual.pdf", TestPdfs.Create(["Some text"]));
+        var firstAttempt = await WaitForFinalStatusAsync(failed.Id);
+        await WaitForFinalStatusAsync(ready.Id);
+
+        var retry = await _client.PostAsync($"/api/documents/{failed.Id}/process", null);
+        var conflict = await _client.PostAsync($"/api/documents/{ready.Id}/process", null);
+        var missing = await _client.PostAsync($"/api/documents/{Guid.NewGuid()}/process", null);
+
+        Assert.Equal(HttpStatusCode.Accepted, retry.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        // The retry runs the pipeline again and fails for the same reason.
+        var secondAttempt = await WaitForFinalStatusAsync(failed.Id, finishedAfter: firstAttempt.ProcessedAt);
+        Assert.Equal("Failed", secondAttempt.Status);
+    }
+
+    /// <summary>
+    /// Polls until the document is Ready or Failed. With <paramref name="finishedAfter"/>, waits for
+    /// a newer result, so a retry isn't confused with the previous attempt.
+    /// </summary>
+    private async Task<DocumentDto> WaitForFinalStatusAsync(Guid id, DateTimeOffset? finishedAfter = null)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (true)
+        {
+            var document = (await _client.GetFromJsonAsync<DocumentDto>($"/api/documents/{id}", timeout.Token))!;
+            if (document.Status is "Ready" or "Failed" && document.ProcessedAt > (finishedAfter ?? DateTimeOffset.MinValue))
+                return document;
+            await Task.Delay(50, timeout.Token);
+        }
     }
 
     [Fact]

@@ -153,6 +153,17 @@ public class DocumentTests
     }
 
     [Fact]
+    public void MarkFailed_DiscardsPartialChunks()
+    {
+        var document = ProcessingDocument();
+        document.AddChunk(0, "partial");
+
+        document.MarkFailed("Embedding service unavailable");
+
+        Assert.Empty(document.Chunks);
+    }
+
+    [Fact]
     public void MarkFailed_TruncatesVeryLongReason()
     {
         var document = ProcessingDocument();

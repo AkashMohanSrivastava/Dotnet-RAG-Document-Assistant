@@ -7,7 +7,8 @@ namespace DocumentAssistant.Api.ErrorHandling;
 
 /// <summary>
 /// Turns expected application errors into ProblemDetails responses:
-/// <see cref="ValidationFailedException"/> → 400, <see cref="TextExtractionException"/> → 422.
+/// <see cref="ValidationFailedException"/> → 400, <see cref="ConflictException"/> → 409,
+/// <see cref="TextExtractionException"/> → 422.
 /// </summary>
 public class ApplicationExceptionHandler(IProblemDetailsService problemDetailsService) : IExceptionHandler
 {
@@ -16,6 +17,7 @@ public class ApplicationExceptionHandler(IProblemDetailsService problemDetailsSe
         var (status, title) = exception switch
         {
             ValidationFailedException => (StatusCodes.Status400BadRequest, "Invalid request"),
+            ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             TextExtractionException => (StatusCodes.Status422UnprocessableEntity, "Text extraction failed"),
             _ => (0, null)
         };
