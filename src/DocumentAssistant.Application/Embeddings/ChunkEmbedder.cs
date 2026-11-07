@@ -27,7 +27,8 @@ public class ChunkEmbedder(
 
         foreach (var batch in chunks.Chunk(Math.Max(1, options.Value.BatchSize)))
         {
-            var embeddings = await generator.GenerateAsync(batch.Select(c => c.Content), GenerationOptions, cancellationToken);
+            var inputs = batch.Select(c => options.Value.DocumentPrefix + c.Content);
+            var embeddings = await generator.GenerateAsync(inputs, GenerationOptions, cancellationToken);
             if (embeddings.Count != batch.Length)
                 throw new InvalidOperationException($"Expected {batch.Length} embeddings but received {embeddings.Count}.");
 

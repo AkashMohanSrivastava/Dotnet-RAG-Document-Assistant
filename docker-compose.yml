@@ -1,0 +1,23 @@
+# Local AI for development: Ollama serving the embedding model on the GPU.
+#   docker compose up -d
+#   docker compose exec ollama ollama pull nomic-embed-text
+# Then set "Embeddings:Provider" to "Ollama" (already the default in appsettings.Development.json).
+services:
+  ollama:
+    image: ollama/ollama:0.40.15
+    container_name: document-assistant-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama # downloaded models survive container restarts
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

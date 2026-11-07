@@ -51,6 +51,18 @@ public class ChunkEmbedderTests
     }
 
     [Fact]
+    public async Task DocumentPrefix_IsAddedToInputs_ButNotToStoredContent()
+    {
+        var chunks = Chunks(1);
+        var embedder = new ChunkEmbedder(_generator, Options.Create(new EmbeddingOptions { DocumentPrefix = "search_document: " }));
+
+        await embedder.EmbedAsync(chunks);
+
+        Assert.Equal(["search_document: x"], _generator.Calls.Single().Inputs);
+        Assert.Equal("x", chunks[0].Content);
+    }
+
+    [Fact]
     public async Task ReportsTokensAndEstimatedCost()
     {
         // 10 chunks x 10 tokens = 100 tokens at $0.02 per million.
