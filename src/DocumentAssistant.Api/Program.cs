@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using DocumentAssistant.Api.ErrorHandling;
 using DocumentAssistant.Application;
 using DocumentAssistant.Application.Documents;
@@ -35,7 +36,8 @@ builder.Services.AddEmbeddingProvider(embeddingsSection.Get<EmbeddingProviderOpt
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(json => json.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 

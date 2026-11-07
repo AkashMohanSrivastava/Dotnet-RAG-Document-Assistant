@@ -1,5 +1,6 @@
 using DocumentAssistant.Application.Documents;
 using DocumentAssistant.Application.Embeddings;
+using DocumentAssistant.Application.Retrieval;
 using DocumentAssistant.Application.Text;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<DocumentProcessor>();
         services.AddSingleton<TextChunker>();
         services.AddScoped<ChunkEmbedder>();
+        services.AddScoped<RetrievalService>();
         return services;
     }
 }

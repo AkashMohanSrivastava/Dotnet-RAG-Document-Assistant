@@ -20,3 +20,9 @@ GET {{DocumentAssistant.Api_HostAddress}}/api/documents/00000000-0000-0000-0000-
 Accept: application/json
 
 ###
+
+### Search: compare mode=vector, keyword and hybrid
+GET {{DocumentAssistant.Api_HostAddress}}/api/search?q=Can I use beta software in production?&mode=hybrid&limit=5
+Accept: application/json
+
+###

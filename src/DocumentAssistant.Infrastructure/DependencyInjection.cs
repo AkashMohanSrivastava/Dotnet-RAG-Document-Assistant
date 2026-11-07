@@ -2,6 +2,7 @@ using DocumentAssistant.Application.Abstractions;
 using DocumentAssistant.Infrastructure.Extraction;
 using DocumentAssistant.Infrastructure.Persistence;
 using DocumentAssistant.Infrastructure.Processing;
+using DocumentAssistant.Infrastructure.Retrieval;
 using DocumentAssistant.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,7 @@ public static class DependencyInjection
             .UseSnakeCaseNamingConvention());
 
         services.AddScoped<IDocumentRepository, DocumentRepository>();
+        services.AddScoped<IChunkSearch, PgChunkSearch>();
         services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(storageRootPath));
         services.AddSingleton<IPdfTextExtractor, PdfPigTextExtractor>();
 

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using NpgsqlTypes;
 using Pgvector;
 
 namespace DocumentAssistant.Infrastructure.Persistence.Configurations;
@@ -38,5 +39,13 @@ public class DocumentChunkConfiguration : IEntityTypeConfiguration<DocumentChunk
         builder.HasIndex(c => c.Embedding)
             .HasMethod("hnsw")
             .HasOperators("vector_cosine_ops");
+
+        // Full-text search for keyword/hybrid retrieval. PostgreSQL computes the tsvector itself
+        // whenever content changes; it's a shadow property because the domain never needs it.
+        builder.Property<NpgsqlTsVector>(SearchVectorColumn)
+            .HasComputedColumnSql("to_tsvector('english', content)", stored: true);
+        builder.HasIndex(SearchVectorColumn).HasMethod("gin");
     }
+
+    public const string SearchVectorColumn = "SearchVector";
 }

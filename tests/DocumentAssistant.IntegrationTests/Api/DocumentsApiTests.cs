@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using DocumentAssistant.Application.Common;
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Retrieval;
 using DocumentAssistant.IntegrationTests.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -21,6 +24,11 @@ namespace DocumentAssistant.IntegrationTests.Api;
 public sealed class DocumentsApiTests : IDisposable
 {
     private readonly string _storageRoot = Path.Combine(Path.GetTempPath(), "docassistant-api-tests", Guid.NewGuid().ToString());
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     // Configured exactly like production (OpenAI provider, but no API key in the Testing environment).
     private readonly WebApplicationFactory<Program> _unconfiguredAiFactory;
 
@@ -93,6 +101,33 @@ public sealed class DocumentsApiTests : IDisposable
         Assert.Equal(2, chunks!.Count);
         Assert.Equal(new ChunkDto(chunks[0].Id, 0, 1, "Installation\nMount the bracket on a flat wall.", true), chunks[0]);
         Assert.Equal(new ChunkDto(chunks[1].Id, 1, 2, "Maintenance\nClean the filter every three months.", true), chunks[1]);
+    }
+
+    [Fact]
+    public async Task Search_FindsChunkInUploadedPdf_InEveryMode()
+    {
+        var pdf = TestPdfs.Create(
+            ["Gizmotron setup", "Charge the gizmotron battery overnight before first use."],
+            ["Gizmotron cleaning", "Wipe the gizmotron lens with a dry cloth."]);
+        var created = await UploadAsync("gizmotron.pdf", pdf);
+        Assert.Equal("Ready", (await WaitForFinalStatusAsync(created.Id)).Status);
+
+        foreach (var mode in new[] { "vector", "keyword", "hybrid" })
+        {
+            var response = await _client.GetFromJsonAsync<SearchResponse>(
+                $"/api/search?q=how do I clean the gizmotron lens&mode={mode}&documentId={created.Id}", JsonOptions);
+
+            Assert.Equal(mode, response!.Mode.ToString(), ignoreCase: true);
+            Assert.Equal(2, response.Results[0].PageNumber);
+        }
+    }
+
+    [Fact]
+    public async Task Search_WithoutQuery_Returns400()
+    {
+        var response = await _client.GetAsync("/api/search?q=");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
