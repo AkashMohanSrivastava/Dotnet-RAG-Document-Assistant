@@ -9,11 +9,6 @@ namespace DocumentAssistant.Infrastructure.Persistence.Configurations;
 
 public class DocumentChunkConfiguration : IEntityTypeConfiguration<DocumentChunk>
 {
-    /// <summary>
-    /// Matches OpenAI text-embedding-3-small. Changing models means a new migration.
-    /// </summary>
-    public const int EmbeddingDimensions = 1536;
-
     public void Configure(EntityTypeBuilder<DocumentChunk> builder)
     {
         builder.HasKey(c => c.Id);
@@ -34,7 +29,7 @@ public class DocumentChunkConfiguration : IEntityTypeConfiguration<DocumentChunk
             array => array == null ? null : array.ToArray());
 
         builder.Property(c => c.Embedding)
-            .HasColumnType($"vector({EmbeddingDimensions})")
+            .HasColumnType($"vector({DocumentChunk.EmbeddingDimensions})")
             .HasConversion(converter, comparer);
 
         builder.HasIndex(c => new { c.DocumentId, c.ChunkIndex }).IsUnique();

@@ -8,6 +8,9 @@ using DocumentAssistant.IntegrationTests.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DocumentAssistant.IntegrationTests.Api;
 
@@ -18,15 +21,21 @@ namespace DocumentAssistant.IntegrationTests.Api;
 public sealed class DocumentsApiTests : IDisposable
 {
     private readonly string _storageRoot = Path.Combine(Path.GetTempPath(), "docassistant-api-tests", Guid.NewGuid().ToString());
+    // Configured exactly like production (OpenAI provider, but no API key in the Testing environment).
+    private readonly WebApplicationFactory<Program> _unconfiguredAiFactory;
+
+    // Same, but with the offline embedding generator swapped in.
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
     public DocumentsApiTests(PostgresFixture fixture)
     {
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+        _unconfiguredAiFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
             .UseEnvironment("Testing") // skip Development settings and user-secrets
             .UseSetting("ConnectionStrings:DocumentAssistant", fixture.ConnectionString)
             .UseSetting("Storage:RootPath", _storageRoot));
+        _factory = _unconfiguredAiFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new HashingEmbeddingGenerator())));
         _client = _factory.CreateClient();
     }
 
@@ -34,6 +43,7 @@ public sealed class DocumentsApiTests : IDisposable
     {
         _client.Dispose();
         _factory.Dispose();
+        _unconfiguredAiFactory.Dispose();
         if (Directory.Exists(_storageRoot))
             Directory.Delete(_storageRoot, recursive: true);
     }
@@ -81,8 +91,20 @@ public sealed class DocumentsApiTests : IDisposable
 
         var chunks = await _client.GetFromJsonAsync<List<ChunkDto>>($"/api/documents/{created.Id}/chunks");
         Assert.Equal(2, chunks!.Count);
-        Assert.Equal(new ChunkDto(chunks[0].Id, 0, 1, "Installation\nMount the bracket on a flat wall.", false), chunks[0]);
-        Assert.Equal(new ChunkDto(chunks[1].Id, 1, 2, "Maintenance\nClean the filter every three months.", false), chunks[1]);
+        Assert.Equal(new ChunkDto(chunks[0].Id, 0, 1, "Installation\nMount the bracket on a flat wall.", true), chunks[0]);
+        Assert.Equal(new ChunkDto(chunks[1].Id, 1, 2, "Maintenance\nClean the filter every three months.", true), chunks[1]);
+    }
+
+    [Fact]
+    public async Task WithoutApiKey_DocumentFails_WithInstructionsToConfigureIt()
+    {
+        using var client = _unconfiguredAiFactory.CreateClient();
+        var created = await UploadAsync("manual.pdf", TestPdfs.Create(["Some text"]), client);
+
+        var processed = await WaitForFinalStatusAsync(created.Id, client: client);
+
+        Assert.Equal("Failed", processed.Status);
+        Assert.Contains("No OpenAI API key is configured", processed.FailureReason);
     }
 
     [Fact]
@@ -122,12 +144,12 @@ public sealed class DocumentsApiTests : IDisposable
     /// Polls until the document is Ready or Failed. With <paramref name="finishedAfter"/>, waits for
     /// a newer result, so a retry isn't confused with the previous attempt.
     /// </summary>
-    private async Task<DocumentDto> WaitForFinalStatusAsync(Guid id, DateTimeOffset? finishedAfter = null)
+    private async Task<DocumentDto> WaitForFinalStatusAsync(Guid id, DateTimeOffset? finishedAfter = null, HttpClient? client = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         while (true)
         {
-            var document = (await _client.GetFromJsonAsync<DocumentDto>($"/api/documents/{id}", timeout.Token))!;
+            var document = (await (client ?? _client).GetFromJsonAsync<DocumentDto>($"/api/documents/{id}", timeout.Token))!;
             if (document.Status is "Ready" or "Failed" && document.ProcessedAt > (finishedAfter ?? DateTimeOffset.MinValue))
                 return document;
             await Task.Delay(50, timeout.Token);
@@ -187,11 +209,11 @@ public sealed class DocumentsApiTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private async Task<DocumentDto> UploadAsync(string fileName, byte[] pdf)
+    private async Task<DocumentDto> UploadAsync(string fileName, byte[] pdf, HttpClient? client = null)
     {
         var file = new ByteArrayContent(pdf);
         file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
-        var response = await _client.PostAsync("/api/documents", new MultipartFormDataContent { { file, "file", fileName } });
+        var response = await (client ?? _client).PostAsync("/api/documents", new MultipartFormDataContent { { file, "file", fileName } });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<DocumentDto>())!;
     }

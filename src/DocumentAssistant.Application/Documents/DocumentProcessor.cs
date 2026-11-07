@@ -1,4 +1,5 @@
 using DocumentAssistant.Application.Abstractions;
+using DocumentAssistant.Application.Embeddings;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -6,14 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace DocumentAssistant.Application.Documents;
 
 /// <summary>
-/// The ingestion pipeline for one document: extract text → chunk → store chunks.
-/// Embedding generation will slot in before the document is marked ready (Phase 7).
+/// The ingestion pipeline for one document: extract text → chunk → embed → store.
 /// </summary>
 public class DocumentProcessor(
     IDocumentRepository repository,
     IFileStorage fileStorage,
     IPdfTextExtractor textExtractor,
     TextChunker chunker,
+    ChunkEmbedder embedder,
     IDocumentProcessingQueue queue,
     ILogger<DocumentProcessor> logger)
 {
@@ -54,19 +55,30 @@ public class DocumentProcessor(
             foreach (var chunk in chunker.Chunk(text))
                 document.AddChunk(chunk.Index, chunk.Content, chunk.PageNumber);
 
+            EmbeddingUsage usage;
+            try
+            {
+                usage = await embedder.EmbedAsync(document.Chunks.ToList(), cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Usually configuration (missing API key, model not pulled) or the provider being down.
+                throw new EmbeddingFailedException($"Generating embeddings failed: {ex.Message}", ex);
+            }
+
             document.MarkReady();
             logger.LogInformation(
-                "Processed document {DocumentId}: {PageCount} pages, {ChunkCount} chunks",
-                documentId, text.Pages.Count, document.Chunks.Count);
+                "Processed document {DocumentId}: {PageCount} pages, {ChunkCount} chunks, {Tokens} embedding tokens, estimated cost ${Cost:0.000000}",
+                documentId, text.Pages.Count, usage.ChunkCount, usage.InputTokens?.ToString() ?? "unknown", usage.EstimatedCost ?? 0);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Shutting down. The document stays Processing; RecoverInterruptedAsync handles it on restart.
             throw;
         }
-        catch (TextExtractionException ex)
+        catch (Exception ex) when (ex is TextExtractionException or EmbeddingFailedException)
         {
-            logger.LogWarning("Text extraction failed for document {DocumentId}: {Reason}", documentId, ex.Message);
+            logger.LogWarning(ex, "Processing failed for document {DocumentId}: {Reason}", documentId, ex.Message);
             document.MarkFailed(ex.Message);
         }
         catch (Exception ex)

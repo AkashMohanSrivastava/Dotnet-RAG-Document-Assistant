@@ -53,21 +53,26 @@ public class DocumentChunkTests
     public void SetEmbedding_StoresDefensiveCopy()
     {
         var chunk = ProcessingDocument().AddChunk(0, "text");
-        var vector = new[] { 0.1f, 0.2f, 0.3f };
+        var vector = new float[DocumentChunk.EmbeddingDimensions];
+        vector[0] = 0.5f;
 
         chunk.SetEmbedding(vector);
         vector[0] = 99f;
 
         Assert.True(chunk.HasEmbedding);
-        Assert.Equal([0.1f, 0.2f, 0.3f], chunk.Embedding!);
+        Assert.Equal(0.5f, chunk.Embedding![0]);
     }
 
-    [Fact]
-    public void SetEmbedding_WithEmptyVector_Throws()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(1536)] // the old OpenAI default size
+    public void SetEmbedding_WithWrongDimensions_Throws(int length)
     {
         var chunk = ProcessingDocument().AddChunk(0, "text");
 
-        Assert.Throws<ArgumentException>(() => chunk.SetEmbedding([]));
+        var ex = Assert.Throws<ArgumentException>(() => chunk.SetEmbedding(new float[length]));
+        Assert.Contains($"must have {DocumentChunk.EmbeddingDimensions} dimensions", ex.Message);
     }
 
     [Fact]

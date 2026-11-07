@@ -6,6 +6,13 @@ namespace DocumentAssistant.Domain.Entities;
 /// </summary>
 public class DocumentChunk
 {
+    /// <summary>
+    /// Size of every embedding vector. 768 works for both OpenAI text-embedding-3-small (which can
+    /// shorten its output on request) and common local models such as nomic-embed-text, so the
+    /// provider can be switched without a schema change.
+    /// </summary>
+    public const int EmbeddingDimensions = 768;
+
     public Guid Id { get; private set; }
     public Guid DocumentId { get; private set; }
     public int ChunkIndex { get; private set; }
@@ -47,8 +54,9 @@ public class DocumentChunk
     public void SetEmbedding(float[] embedding)
     {
         ArgumentNullException.ThrowIfNull(embedding);
-        if (embedding.Length == 0)
-            throw new ArgumentException("Embedding cannot be empty.", nameof(embedding));
+        if (embedding.Length != EmbeddingDimensions)
+            throw new ArgumentException(
+                $"Embedding must have {EmbeddingDimensions} dimensions but has {embedding.Length}.", nameof(embedding));
 
         // Copy so callers can't mutate the stored vector afterwards.
         Embedding = (float[])embedding.Clone();

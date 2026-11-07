@@ -1,6 +1,5 @@
 using DocumentAssistant.Domain.Entities;
 using DocumentAssistant.Domain.Enums;
-using DocumentAssistant.Infrastructure.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Pgvector;
 
@@ -9,7 +8,7 @@ namespace DocumentAssistant.IntegrationTests.Persistence;
 [Collection(PostgresCollection.Name)]
 public class DocumentPersistenceTests(PostgresFixture fixture)
 {
-    private const int Dimensions = DocumentChunkConfiguration.EmbeddingDimensions;
+    private const int Dimensions = DocumentChunk.EmbeddingDimensions;
 
     /// <summary>A unit vector pointing along a single axis, so similarity is easy to reason about.</summary>
     private static float[] AxisVector(int axis)

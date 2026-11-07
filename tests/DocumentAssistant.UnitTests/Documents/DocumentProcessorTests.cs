@@ -1,4 +1,5 @@
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Embeddings;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
 using DocumentAssistant.Domain.Enums;
@@ -14,13 +15,16 @@ public class DocumentProcessorTests
     private readonly FakeFileStorage _storage = new();
     private readonly FakePdfTextExtractor _extractor = new();
     private readonly FakeProcessingQueue _queue = new();
+    private readonly FakeEmbeddingGenerator _embeddings = new();
     private readonly DocumentProcessor _processor;
 
     public DocumentProcessorTests()
     {
         var chunker = new TextChunker(Options.Create(new ChunkingOptions { MaxChunkSize = 50, ChunkOverlap = 0 }));
         _processor = new DocumentProcessor(
-            _repository, _storage, _extractor, chunker, _queue, NullLogger<DocumentProcessor>.Instance);
+            _repository, _storage, _extractor, chunker,
+            new ChunkEmbedder(_embeddings, Options.Create(new EmbeddingOptions())),
+            _queue, NullLogger<DocumentProcessor>.Instance);
     }
 
     private async Task<Document> SavedUploadedDocument()
@@ -49,9 +53,23 @@ public class DocumentProcessorTests
             [(0, 1, "Short intro."), (1, 2, "First paragraph on page two."), (2, 2, "Second paragraph on page two.")],
             document.Chunks.Select(c => (c.ChunkIndex, c.PageNumber ?? 0, c.Content)));
         Assert.Equal([1, 2, 3], _extractor.LastInput); // read the stored file
+        Assert.All(document.Chunks, c => Assert.True(c.HasEmbedding));
 
         // Processing is saved first, then the final state.
         Assert.Equal([DocumentStatus.Processing, DocumentStatus.Ready], _repository.SavedStatuses);
+    }
+
+    [Fact]
+    public async Task Process_EmbeddingFails_MarksFailedWithProviderReason()
+    {
+        var document = await SavedUploadedDocument();
+        _embeddings.Failure = new HttpRequestException("401 Unauthorized");
+
+        await _processor.ProcessAsync(document.Id);
+
+        Assert.Equal(DocumentStatus.Failed, document.Status);
+        Assert.Equal("Generating embeddings failed: 401 Unauthorized", document.FailureReason);
+        Assert.Empty(document.Chunks);
     }
 
     [Fact]

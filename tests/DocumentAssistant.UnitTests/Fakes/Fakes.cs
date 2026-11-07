@@ -2,6 +2,7 @@ using DocumentAssistant.Application.Abstractions;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
 using DocumentAssistant.Domain.Enums;
+using Microsoft.Extensions.AI;
 
 namespace DocumentAssistant.UnitTests.Fakes;
 
@@ -90,6 +91,42 @@ public sealed class FakePdfTextExtractor : IPdfTextExtractor
 
         return Failure is null ? Result : throw Failure;
     }
+}
+
+/// <summary>
+/// Returns a vector per input (first element = input length, so tests can tell them apart) and
+/// reports 10 tokens per input. Records every call.
+/// </summary>
+public sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
+{
+    public int Dimensions { get; set; } = DocumentChunk.EmbeddingDimensions;
+    public bool ReportUsage { get; set; } = true;
+    public Exception? Failure { get; set; }
+    public List<(IReadOnlyList<string> Inputs, EmbeddingGenerationOptions? Options)> Calls { get; } = [];
+
+    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        var inputs = values.ToList();
+        Calls.Add((inputs, options));
+        if (Failure is not null)
+            throw Failure;
+
+        var embeddings = new GeneratedEmbeddings<Embedding<float>>(inputs.Select(text =>
+        {
+            var vector = new float[Dimensions];
+            vector[0] = text.Length;
+            return new Embedding<float>(vector);
+        }));
+        if (ReportUsage)
+            embeddings.Usage = new UsageDetails { InputTokenCount = inputs.Count * 10 };
+
+        return Task.FromResult(embeddings);
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+    public void Dispose() { }
 }
 
 public sealed class FakeProcessingQueue : IDocumentProcessingQueue

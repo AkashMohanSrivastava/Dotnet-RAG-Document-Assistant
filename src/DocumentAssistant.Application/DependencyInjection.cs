@@ -1,4 +1,5 @@
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Embeddings;
 using DocumentAssistant.Application.Text;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,6 +12,7 @@ public static class DependencyInjection
         services.AddScoped<DocumentService>();
         services.AddScoped<DocumentProcessor>();
         services.AddSingleton<TextChunker>();
+        services.AddScoped<ChunkEmbedder>();
         return services;
     }
 }

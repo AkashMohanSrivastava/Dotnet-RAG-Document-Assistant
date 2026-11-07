@@ -1,8 +1,10 @@
 using DocumentAssistant.Api.ErrorHandling;
 using DocumentAssistant.Application;
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Embeddings;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Infrastructure;
+using DocumentAssistant.Infrastructure.AI;
 using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +27,10 @@ builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 
 builder.Services.Configure<FormOptions>(form => form.MultipartBodyLengthLimit = maxRequestBytes);
 
 builder.Services.Configure<ChunkingOptions>(builder.Configuration.GetSection(ChunkingOptions.SectionName));
+
+var embeddingsSection = builder.Configuration.GetSection(EmbeddingOptions.SectionName);
+builder.Services.Configure<EmbeddingOptions>(embeddingsSection);
+builder.Services.AddEmbeddingProvider(embeddingsSection.Get<EmbeddingProviderOptions>() ?? new());
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
