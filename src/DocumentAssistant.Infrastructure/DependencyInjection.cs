@@ -1,4 +1,5 @@
 using DocumentAssistant.Application.Abstractions;
+using DocumentAssistant.Infrastructure.Extraction;
 using DocumentAssistant.Infrastructure.Persistence;
 using DocumentAssistant.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,7 @@ public static class DependencyInjection
 
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(storageRootPath));
+        services.AddSingleton<IPdfTextExtractor, PdfPigTextExtractor>();
 
         return services;
     }

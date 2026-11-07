@@ -2,6 +2,7 @@ using System.Text;
 using DocumentAssistant.Application.Abstractions;
 using DocumentAssistant.Application.Common;
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
 using DocumentAssistant.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,6 +16,7 @@ public class DocumentServiceTests
 
     private readonly FakeDocumentRepository _repository = new();
     private readonly FakeFileStorage _storage = new();
+    private readonly FakePdfTextExtractor _extractor = new();
     private readonly DocumentService _service;
 
     public DocumentServiceTests()
@@ -22,6 +24,7 @@ public class DocumentServiceTests
         _service = new DocumentService(
             _repository,
             _storage,
+            _extractor,
             Options.Create(new DocumentUploadOptions { MaxFileSizeBytes = MaxSize }),
             NullLogger<DocumentService>.Instance);
     }
@@ -157,6 +160,39 @@ public class DocumentServiceTests
         Assert.Equal(3, result.Items.Count);
     }
 
+    [Fact]
+    public async Task ExtractText_ReadsStoredFileAndReturnsPages()
+    {
+        var uploaded = await Upload("manual.pdf", Pdf());
+        _extractor.Result = new ExtractedText([new ExtractedPage(1, "Hello"), new ExtractedPage(2, "World!")]);
+
+        var text = await _service.ExtractTextAsync(uploaded.Id);
+
+        Assert.NotNull(text);
+        Assert.Equal(uploaded.Id, text.DocumentId);
+        Assert.Equal("manual.pdf", text.FileName);
+        Assert.Equal(2, text.PageCount);
+        Assert.Equal(11, text.TotalCharacters);
+        Assert.Equal(_storage.Files[DocumentService.StorageKeyFor(uploaded.Id)], _extractor.LastInput);
+    }
+
+    [Fact]
+    public async Task ExtractText_UnknownDocument_ReturnsNull()
+    {
+        Assert.Null(await _service.ExtractTextAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ExtractText_ExtractionFails_PropagatesAndLeavesDocumentUnchanged()
+    {
+        var uploaded = await Upload("manual.pdf", Pdf());
+        _extractor.Failure = new TextExtractionException("No text.");
+
+        await Assert.ThrowsAsync<TextExtractionException>(() => _service.ExtractTextAsync(uploaded.Id));
+
+        Assert.Equal(DocumentStatus.Uploaded, _repository.Documents.Single().Status);
+    }
+
     private void AssertNothingSaved()
     {
         Assert.Empty(_repository.Documents);
@@ -211,6 +247,22 @@ public class DocumentServiceTests
         {
             Files.Remove(key);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakePdfTextExtractor : IPdfTextExtractor
+    {
+        public ExtractedText Result { get; set; } = new([new ExtractedPage(1, "text")]);
+        public Exception? Failure { get; set; }
+        public byte[]? LastInput { get; private set; }
+
+        public async Task<ExtractedText> ExtractAsync(Stream pdf, CancellationToken cancellationToken = default)
+        {
+            using var buffer = new MemoryStream();
+            await pdf.CopyToAsync(buffer, cancellationToken);
+            LastInput = buffer.ToArray();
+
+            return Failure is null ? Result : throw Failure;
         }
     }
 

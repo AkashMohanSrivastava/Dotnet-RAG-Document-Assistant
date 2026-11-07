@@ -84,6 +84,50 @@ public sealed class DocumentsApiTests : IDisposable
     }
 
     [Fact]
+    public async Task GetText_ReturnsExtractedTextPerPage()
+    {
+        var pdf = TestPdfs.Create(["Warranty terms"], ["Contact support at extension 42."]);
+        var created = await UploadAsync("warranty.pdf", pdf);
+
+        var text = await _client.GetFromJsonAsync<DocumentTextDto>($"/api/documents/{created.Id}/text");
+
+        Assert.NotNull(text);
+        Assert.Equal(2, text.PageCount);
+        Assert.Equal("Warranty terms", text.Pages[0].Text);
+        Assert.Equal("Contact support at extension 42.", text.Pages[1].Text);
+        Assert.Equal(text.Pages.Sum(p => p.Text.Length), text.TotalCharacters);
+    }
+
+    [Fact]
+    public async Task GetText_PdfWithoutText_Returns422()
+    {
+        var created = await UploadAsync("scanned.pdf", TestPdfs.Create([], [])); // two blank pages
+
+        var response = await _client.GetAsync($"/api/documents/{created.Id}/text");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+        Assert.Contains("no extractable text", problem?.Detail);
+    }
+
+    [Fact]
+    public async Task GetText_UnknownDocument_Returns404()
+    {
+        var response = await _client.GetAsync($"/api/documents/{Guid.NewGuid()}/text");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    private async Task<DocumentDto> UploadAsync(string fileName, byte[] pdf)
+    {
+        var file = new ByteArrayContent(pdf);
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        var response = await _client.PostAsync("/api/documents", new MultipartFormDataContent { { file, "file", fileName } });
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<DocumentDto>())!;
+    }
+
+    [Fact]
     public async Task GetById_Unknown_Returns404()
     {
         var response = await _client.GetAsync($"/api/documents/{Guid.NewGuid()}");

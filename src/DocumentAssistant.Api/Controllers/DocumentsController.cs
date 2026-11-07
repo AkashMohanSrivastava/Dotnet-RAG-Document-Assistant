@@ -30,6 +30,17 @@ public class DocumentsController(DocumentService documentService) : ControllerBa
         return document is null ? NotFound() : document;
     }
 
+    /// <summary>Preview of the text extracted from each page, useful for checking a PDF before processing.</summary>
+    [HttpGet("{id:guid}/text")]
+    [ProducesResponseType<DocumentTextDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<DocumentTextDto>> GetText(Guid id, CancellationToken cancellationToken)
+    {
+        var text = await documentService.ExtractTextAsync(id, cancellationToken);
+        return text is null ? NotFound() : text;
+    }
+
     [HttpGet]
     [ProducesResponseType<PagedResult<DocumentDto>>(StatusCodes.Status200OK)]
     public Task<PagedResult<DocumentDto>> List(int page = 1, int pageSize = 20, CancellationToken cancellationToken = default) =>

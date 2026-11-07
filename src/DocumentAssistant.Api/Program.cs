@@ -24,7 +24,7 @@ builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 
 builder.Services.Configure<FormOptions>(form => form.MultipartBodyLengthLimit = maxRequestBytes);
 
 builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
+builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

@@ -1,5 +1,6 @@
 using DocumentAssistant.Application.Abstractions;
 using DocumentAssistant.Application.Common;
+using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,7 @@ namespace DocumentAssistant.Application.Documents;
 public class DocumentService(
     IDocumentRepository repository,
     IFileStorage fileStorage,
+    IPdfTextExtractor textExtractor,
     IOptions<DocumentUploadOptions> options,
     ILogger<DocumentService> logger)
 {
@@ -83,6 +85,23 @@ public class DocumentService(
     {
         var document = await repository.GetByIdAsync(id, cancellationToken);
         return document is null ? null : DocumentDto.FromEntity(document);
+    }
+
+    /// <summary>
+    /// Extracts the stored file's text on demand, without changing the document. Returns null if
+    /// the document does not exist.
+    /// </summary>
+    /// <exception cref="TextExtractionException">The PDF can't be read or has no text.</exception>
+    public async Task<DocumentTextDto?> ExtractTextAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var document = await repository.GetByIdAsync(id, cancellationToken);
+        if (document is null)
+            return null;
+
+        await using var pdf = await fileStorage.OpenReadAsync(StorageKeyFor(document.Id), cancellationToken);
+        var text = await textExtractor.ExtractAsync(pdf, cancellationToken);
+
+        return new DocumentTextDto(document.Id, document.FileName, text.Pages.Count, text.TotalCharacters, text.Pages);
     }
 
     public async Task<PagedResult<DocumentDto>> ListAsync(int page, int pageSize, CancellationToken cancellationToken = default)
