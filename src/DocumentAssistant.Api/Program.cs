@@ -75,7 +75,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 // Unknown non-API paths get the React app; unknown /api paths still return 404.
-app.MapFallbackToFile("{*path:regex(^(?!api/).*$)}", "index.html");
+// "nonfile" keeps the fallback away from real files (/assets/*.js): routing runs before static
+// files, and the static file middleware skips any request that already matched an endpoint.
+app.MapFallbackToFile("{*path:nonfile:regex(^(?!api/).*$)}", "index.html");
 
 app.Run();
 
