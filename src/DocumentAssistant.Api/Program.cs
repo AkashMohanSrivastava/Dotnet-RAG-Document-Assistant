@@ -3,6 +3,7 @@ using DocumentAssistant.Api.ErrorHandling;
 using DocumentAssistant.Application;
 using DocumentAssistant.Application.Documents;
 using DocumentAssistant.Application.Embeddings;
+using DocumentAssistant.Application.Rag;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Infrastructure;
 using DocumentAssistant.Infrastructure.AI;
@@ -31,7 +32,11 @@ builder.Services.Configure<ChunkingOptions>(builder.Configuration.GetSection(Chu
 
 var embeddingsSection = builder.Configuration.GetSection(EmbeddingOptions.SectionName);
 builder.Services.Configure<EmbeddingOptions>(embeddingsSection);
-builder.Services.AddEmbeddingProvider(embeddingsSection.Get<EmbeddingProviderOptions>() ?? new());
+builder.Services.AddEmbeddingProvider(embeddingsSection.Get<AiProviderOptions>() ?? new());
+
+var ragSection = builder.Configuration.GetSection(RagOptions.SectionName);
+builder.Services.Configure<RagOptions>(ragSection);
+builder.Services.AddChatProvider(builder.Configuration.GetSection("Chat").Get<AiProviderOptions>() ?? new());
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApplicationExceptionHandler>();

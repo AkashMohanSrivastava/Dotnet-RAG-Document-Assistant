@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DocumentAssistant.Application.Common;
 using DocumentAssistant.Application.Documents;
+using DocumentAssistant.Application.Rag;
 using DocumentAssistant.Application.Retrieval;
 using DocumentAssistant.IntegrationTests.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -42,8 +43,9 @@ public sealed class DocumentsApiTests : IDisposable
             .UseEnvironment("Testing") // skip Development settings and user-secrets
             .UseSetting("ConnectionStrings:DocumentAssistant", fixture.ConnectionString)
             .UseSetting("Storage:RootPath", _storageRoot));
-        _factory = _unconfiguredAiFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new HashingEmbeddingGenerator())));
+        _factory = _unconfiguredAiFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services => services
+            .AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new HashingEmbeddingGenerator())
+            .AddSingleton<IChatClient>(new QuotingChatClient())));
         _client = _factory.CreateClient();
     }
 
@@ -120,6 +122,36 @@ public sealed class DocumentsApiTests : IDisposable
             Assert.Equal(mode, response!.Mode.ToString(), ignoreCase: true);
             Assert.Equal(2, response.Results[0].PageNumber);
         }
+    }
+
+    [Fact]
+    public async Task Ask_AnswersFromUploadedPdf_WithCitedSourcePage()
+    {
+        var pdf = TestPdfs.Create(
+            ["Flumbox introduction", "The flumbox is a pretend appliance."],
+            ["Flumbox descaling", "Descale the flumbox monthly using white vinegar."]);
+        var created = await UploadAsync("flumbox.pdf", pdf);
+        Assert.Equal("Ready", (await WaitForFinalStatusAsync(created.Id)).Status);
+
+        var response = await _client.PostAsJsonAsync("/api/ask",
+            new { question = "How do I descale the flumbox?", documentId = created.Id });
+
+        response.EnsureSuccessStatusCode();
+        var answer = (await response.Content.ReadFromJsonAsync<AskResponse>(JsonOptions))!;
+        Assert.True(answer.Answered);
+        Assert.Equal("quoting-test-model", answer.Model);
+        Assert.EndsWith("[1]", answer.Answer);
+        var cited = Assert.Single(answer.Sources, s => s.Cited);
+        Assert.Equal(1, cited.Number);
+        Assert.Equal(2, cited.PageNumber); // the descaling page was retrieved first
+    }
+
+    [Fact]
+    public async Task Ask_WithoutQuestion_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync("/api/ask", new { question = "" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

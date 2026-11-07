@@ -1,4 +1,5 @@
 using DocumentAssistant.Application.Abstractions;
+using DocumentAssistant.Application.Retrieval;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Domain.Entities;
 using DocumentAssistant.Domain.Enums;
@@ -127,6 +128,44 @@ public sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embeddi
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
     public void Dispose() { }
+}
+
+/// <summary>Returns a fixed reply (with token usage) and records the messages and options it was sent.</summary>
+public sealed class FakeChatClient : IChatClient
+{
+    public string Reply { get; set; } = "An answer [1].";
+    public List<(IReadOnlyList<ChatMessage> Messages, ChatOptions? Options)> Calls { get; } = [];
+
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        Calls.Add((messages.ToList(), options));
+        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, Reply))
+        {
+            ModelId = "fake-model",
+            Usage = new UsageDetails { InputTokenCount = 500, OutputTokenCount = 20 }
+        });
+    }
+
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+    public void Dispose() { }
+}
+
+/// <summary>Returns the same matches from both vector and keyword search.</summary>
+public sealed class StaticChunkSearch(params ChunkMatch[] matches) : IChunkSearch
+{
+    public Task<IReadOnlyList<ChunkMatch>> VectorSearchAsync(
+        float[] queryEmbedding, int limit, Guid? documentId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ChunkMatch>>(matches.Take(limit).ToList());
+
+    public Task<IReadOnlyList<ChunkMatch>> KeywordSearchAsync(
+        string query, int limit, Guid? documentId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ChunkMatch>>(matches.Take(limit).ToList());
 }
 
 public sealed class FakeProcessingQueue : IDocumentProcessingQueue

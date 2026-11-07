@@ -26,3 +26,11 @@ GET {{DocumentAssistant.Api_HostAddress}}/api/search?q=Can I use beta software i
 Accept: application/json
 
 ###
+
+### Ask a question (RAG)
+POST {{DocumentAssistant.Api_HostAddress}}/api/ask
+Content-Type: application/json
+
+{ "question": "Can I use beta software in production?" }
+
+###
