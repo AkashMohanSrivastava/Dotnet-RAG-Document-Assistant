@@ -49,7 +49,7 @@ public class Document
             ContentType = contentType.Trim(),
             FileSizeBytes = fileSizeBytes,
             Status = DocumentStatus.Uploaded,
-            UploadedAt = DateTimeOffset.UtcNow
+            UploadedAt = UtcNow()
         };
     }
 
@@ -86,7 +86,7 @@ public class Document
             throw new InvalidOperationException("A document cannot be marked ready without any chunks.");
 
         Status = DocumentStatus.Ready;
-        ProcessedAt = DateTimeOffset.UtcNow;
+        ProcessedAt = UtcNow();
     }
 
     public void MarkFailed(string reason)
@@ -99,7 +99,15 @@ public class Document
         reason = reason.Trim();
         FailureReason = reason.Length > MaxFailureReasonLength ? reason[..MaxFailureReasonLength] : reason;
         Status = DocumentStatus.Failed;
-        ProcessedAt = DateTimeOffset.UtcNow;
+        ProcessedAt = UtcNow();
+    }
+
+    // Rounded down to whole microseconds (what PostgreSQL stores), so a timestamp is the same
+    // before and after a round trip to the database.
+    private static DateTimeOffset UtcNow()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
     }
 
     private InvalidOperationException InvalidTransition(DocumentStatus target) =>

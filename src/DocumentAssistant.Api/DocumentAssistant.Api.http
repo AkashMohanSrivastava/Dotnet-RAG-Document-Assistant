@@ -1,6 +1,22 @@
 @DocumentAssistant.Api_HostAddress = http://localhost:5056
 
-GET {{DocumentAssistant.Api_HostAddress}}/weatherforecast/
+### Upload a PDF (change the path to a PDF on your machine)
+POST {{DocumentAssistant.Api_HostAddress}}/api/documents
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="sample.pdf"
+Content-Type: application/pdf
+
+< ./sample.pdf
+--boundary--
+
+### List documents
+GET {{DocumentAssistant.Api_HostAddress}}/api/documents?page=1&pageSize=20
+Accept: application/json
+
+### Get a document by id
+GET {{DocumentAssistant.Api_HostAddress}}/api/documents/00000000-0000-0000-0000-000000000000
 Accept: application/json
 
 ###

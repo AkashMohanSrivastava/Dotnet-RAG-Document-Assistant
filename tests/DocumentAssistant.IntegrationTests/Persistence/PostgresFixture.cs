@@ -17,12 +17,14 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     private ServiceProvider _services = null!;
 
+    public string ConnectionString => _container.GetConnectionString();
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();
 
         _services = new ServiceCollection()
-            .AddInfrastructure(_container.GetConnectionString())
+            .AddInfrastructure(ConnectionString, Path.Combine(Path.GetTempPath(), "docassistant-fixture"))
             .BuildServiceProvider();
 
         await using var context = CreateContext();
