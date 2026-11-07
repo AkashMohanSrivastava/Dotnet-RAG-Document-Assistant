@@ -1,8 +1,23 @@
-# Local AI for development: Ollama serving the embedding model on the GPU.
-#   docker compose up -d
-#   docker compose exec ollama ollama pull nomic-embed-text
-# Then set "Embeddings:Provider" to "Ollama" (already the default in appsettings.Development.json).
+# The whole stack, fully local and free:
+#   docker compose up -d --build      -> open http://localhost:8080
+# The first start downloads the AI models (~5 GB), so it takes a while.
+#
+# For development (API/frontend running from your IDE), start only the AI part:
+#   docker compose up -d ollama ollama-models
 services:
+  db:
+    image: pgvector/pgvector:pg17-bookworm # PostgreSQL 17 with the pgvector extension
+    environment:
+      POSTGRES_DB: documentassistant
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only} # not published outside the Docker network
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d documentassistant"]
+      interval: 5s
+      retries: 10
+
   ollama:
     image: ollama/ollama:0.40.15
     container_name: document-assistant-ollama
@@ -19,5 +34,42 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-volumes:
+  # One-off job: downloads the embedding and chat models into the ollama volume (instant if already there).
   ollama-models:
+    image: ollama/ollama:0.40.15
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull nomic-embed-text && ollama pull llama3.1:8b"]
+    depends_on:
+      - ollama
+    restart: "no"
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      ConnectionStrings__DocumentAssistant: Host=db;Database=documentassistant;Username=appuser;Password=${POSTGRES_PASSWORD:-local-dev-only}
+      Database__MigrateOnStartup: "true"
+      Storage__RootPath: /data/uploads
+      Embeddings__Provider: Ollama
+      Embeddings__Model: nomic-embed-text
+      Embeddings__OllamaEndpoint: http://ollama:11434
+      Embeddings__DocumentPrefix: "search_document: "
+      Embeddings__QueryPrefix: "search_query: "
+      Embeddings__CostPerMillionTokens: "0"
+      Chat__Provider: Ollama
+      Chat__Model: llama3.1:8b
+      Chat__OllamaEndpoint: http://ollama:11434
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama-models:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  ollama-models:
+  uploads:

@@ -7,6 +7,8 @@ using DocumentAssistant.Application.Rag;
 using DocumentAssistant.Application.Text;
 using DocumentAssistant.Infrastructure;
 using DocumentAssistant.Infrastructure.AI;
+using DocumentAssistant.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,6 +50,13 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+// In Docker the database starts empty, so apply migrations at startup there (off by default).
+if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<DocumentAssistantDbContext>().Database.MigrateAsync();
+}
+
 // Configure the HTTP request pipeline.
 app.UseExceptionHandler();
 
@@ -58,9 +67,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// The Docker image puts the built React app in wwwroot; in development Vite serves it instead.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseAuthorization();
 
 app.MapControllers();
+// Unknown non-API paths get the React app; unknown /api paths still return 404.
+app.MapFallbackToFile("{*path:regex(^(?!api/).*$)}", "index.html");
 
 app.Run();
 

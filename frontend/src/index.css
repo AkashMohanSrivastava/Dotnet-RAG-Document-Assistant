@@ -44,9 +44,13 @@ button:disabled { cursor: default; }
 .app {
   display: grid;
   grid-template-columns: 300px 1fr;
+  grid-template-rows: 100%;
   height: 100vh;
   overflow: hidden; /* panels scroll individually; the page itself never does */
 }
+/* Grid items default to min-height: auto and would grow to fit their content, so the message
+   list would never scroll on its own. min-height: 0 keeps each panel at the row's height. */
+.app > * { min-height: 0; }
 
 /* --- Documents --- */
 
@@ -201,6 +205,6 @@ button:disabled { cursor: default; }
 .composer button:disabled { opacity: .5; }
 
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; overflow: visible; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(70vh, 1fr); height: auto; min-height: 100vh; overflow: visible; }
   .documents { border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
 }
