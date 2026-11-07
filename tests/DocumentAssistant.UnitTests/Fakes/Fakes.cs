@@ -130,26 +130,45 @@ public sealed class FakeEmbeddingGenerator : IEmbeddingGenerator<string, Embeddi
     public void Dispose() { }
 }
 
-/// <summary>Returns a fixed reply (with token usage) and records the messages and options it was sent.</summary>
+/// <summary>
+/// Replies with queued replies first (one per call), then <see cref="Reply"/>. Streaming sends the reply
+/// word by word, with usage in the last update. Records every call's messages and options.
+/// </summary>
 public sealed class FakeChatClient : IChatClient
 {
     public string Reply { get; set; } = "An answer [1].";
+    public Queue<string> QueuedReplies { get; } = new();
     public List<(IReadOnlyList<ChatMessage> Messages, ChatOptions? Options)> Calls { get; } = [];
 
-    public Task<ChatResponse> GetResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+    private string NextReply(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
         Calls.Add((messages.ToList(), options));
-        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, Reply))
+        return QueuedReplies.Count > 0 ? QueuedReplies.Dequeue() : Reply;
+    }
+
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, NextReply(messages, options)))
         {
             ModelId = "fake-model",
             Usage = new UsageDetails { InputTokenCount = 500, OutputTokenCount = 20 }
         });
-    }
 
-    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException();
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var words = NextReply(messages, options).Split(' ');
+        for (var i = 0; i < words.Length; i++)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, i == 0 ? words[i] : " " + words[i]) { ModelId = "fake-model" };
+        }
+        yield return new ChatResponseUpdate
+        {
+            Contents = [new UsageContent(new UsageDetails { InputTokenCount = 500, OutputTokenCount = 20 })]
+        };
+    }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 

@@ -147,6 +147,46 @@ public sealed class DocumentsApiTests : IDisposable
     }
 
     [Fact]
+    public async Task AskStream_SendsServerSentEvents_SourcesTokensDone()
+    {
+        var pdf = TestPdfs.Create(["Wobblator safety", "Never submerge the wobblator in water."]);
+        var created = await UploadAsync("wobblator.pdf", pdf);
+        Assert.Equal("Ready", (await WaitForFinalStatusAsync(created.Id)).Status);
+
+        var response = await _client.PostAsJsonAsync("/api/ask/stream",
+            new { question = "Can the wobblator go in water?", documentId = created.Id });
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+
+        // Parse the SSE wire format: "event: <type>\ndata: <json>\n\n".
+        var events = (await response.Content.ReadAsStringAsync())
+            .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+            .Select(block => block.Split('\n'))
+            .Select(lines => (
+                Type: lines.Single(l => l.StartsWith("event: "))["event: ".Length..],
+                Data: JsonDocument.Parse(lines.Single(l => l.StartsWith("data: "))["data: ".Length..]).RootElement))
+            .ToList();
+
+        Assert.Equal("sources", events[0].Type);
+        Assert.Equal(1, events[0].Data.GetProperty("sources")[0].GetProperty("pageNumber").GetInt32());
+        Assert.Equal("done", events[^1].Type);
+        Assert.Equal([1], events[^1].Data.GetProperty("citedSources").EnumerateArray().Select(e => e.GetInt32()));
+
+        var tokens = events.Where(e => e.Type == "token").Select(e => e.Data.GetProperty("text").GetString()).ToList();
+        Assert.True(tokens.Count > 1);
+        Assert.Equal("Wobblator safety [1]", string.Concat(tokens));
+    }
+
+    [Fact]
+    public async Task AskStream_WithoutQuestion_Returns400()
+    {
+        var response = await _client.PostAsJsonAsync("/api/ask/stream", new { question = "" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Ask_WithoutQuestion_Returns400()
     {
         var response = await _client.PostAsJsonAsync("/api/ask", new { question = "" });

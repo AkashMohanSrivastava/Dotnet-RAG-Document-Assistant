@@ -10,18 +10,26 @@ namespace DocumentAssistant.IntegrationTests;
 public sealed partial class QuotingChatClient : IChatClient
 {
     public Task<ChatResponse> GetResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        var prompt = messages.Last().Text;
-        var firstSource = FirstSourceLine().Match(prompt);
-        var answer = firstSource.Success ? $"{firstSource.Groups[1].Value} [1]" : "I couldn't find the answer in the uploaded documents.";
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, Answer(messages))) { ModelId = "quoting-test-model" });
 
-        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, answer)) { ModelId = "quoting-test-model" });
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var words = Answer(messages).Split(' ');
+        for (var i = 0; i < words.Length; i++)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, i == 0 ? words[i] : " " + words[i]) { ModelId = "quoting-test-model" };
+        }
     }
 
-    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException();
+    private static string Answer(IEnumerable<ChatMessage> messages)
+    {
+        var firstSource = FirstSourceLine().Match(messages.Last().Text);
+        return firstSource.Success ? $"{firstSource.Groups[1].Value} [1]" : "I couldn't find the answer in the uploaded documents.";
+    }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
