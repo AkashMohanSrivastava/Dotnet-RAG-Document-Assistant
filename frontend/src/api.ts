@@ -64,7 +64,9 @@ export async function uploadDocument(file: File): Promise<DocumentDto> {
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  await ensureOk(await fetch(`/api/documents/${id}`, { method: 'DELETE' }))
+  const response = await fetch(`/api/documents/${id}`, { method: 'DELETE' })
+  // 404 means it's already gone (a double click, or another tab deleted it): that's what we wanted.
+  if (response.status !== 404) await ensureOk(response)
 }
 
 export async function reprocessDocument(id: string): Promise<void> {

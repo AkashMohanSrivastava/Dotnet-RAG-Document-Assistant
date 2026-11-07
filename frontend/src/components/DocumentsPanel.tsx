@@ -60,6 +60,8 @@ export function DocumentsPanel({ selectedId, onSelect }: Props) {
       await deleteDocument(d.id)
       if (selectedId === d.id) onSelect(null)
       setDocuments(docs => docs.filter(x => x.id !== d.id))
+      // Re-read the list so it matches the server (and any earlier error message is cleared).
+      await refresh()
     } catch (e) {
       setError((e as Error).message)
     }
