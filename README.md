@@ -160,6 +160,7 @@ Re-process existing documents after switching embedding models, since vectors fr
 | `GET` | `/api/documents` · `/api/documents/{id}` | List / get documents and their status |
 | `GET` | `/api/documents/{id}/text` · `/chunks` | Inspect extracted text and stored chunks |
 | `POST` | `/api/documents/{id}/process` | Retry a failed document |
+| `DELETE` | `/api/documents/{id}` | Delete a document, its chunks and its file |
 | `GET` | `/api/search?q=&mode=vector\|keyword\|hybrid` | Retrieval only, with each method's rank |
 | `POST` | `/api/ask` | Answer with citations, sources, token usage |
 | `POST` | `/api/ask/stream` | Same, streamed as Server-Sent Events |

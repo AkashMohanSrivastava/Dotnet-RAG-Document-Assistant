@@ -9,6 +9,8 @@ public class DocumentRepository(DocumentAssistantDbContext context) : IDocumentR
 {
     public void Add(Document document) => context.Documents.Add(document);
 
+    public void Remove(Document document) => context.Documents.Remove(document);
+
     public Task<Document?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         context.Documents.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 

@@ -24,6 +24,9 @@ public sealed class FakeDocumentRepository : IDocumentRepository
 
     public void Add(Document document) => _pending.Add(document);
 
+    // Applied immediately; the tests only check the end result.
+    public void Remove(Document document) => Documents.Remove(document);
+
     public Task<Document?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         Task.FromResult(Documents.FirstOrDefault(d => d.Id == id));
 

@@ -7,6 +7,9 @@ public interface IDocumentRepository
 {
     void Add(Document document);
 
+    /// <summary>Deletes the document; its chunks are deleted with it (cascade).</summary>
+    void Remove(Document document);
+
     /// <summary>Loads the document without its chunks.</summary>
     Task<Document?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 

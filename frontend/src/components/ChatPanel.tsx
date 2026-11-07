@@ -71,8 +71,20 @@ export function ChatPanel({ documentId }: Props) {
     document.getElementById(`source-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
+  // The server keeps no chat state, so a new chat is just forgetting the history on this side.
+  function newChat() {
+    setMessages([])
+    setHighlight(null)
+    setInput('')
+  }
+
   return (
     <main className="chat">
+      {messages.length > 0 && (
+        <div className="chat-toolbar">
+          <button onClick={newChat} disabled={streaming}>+ New chat</button>
+        </div>
+      )}
       <div className="messages" ref={list}>
         {messages.length === 0 && (
           <div className="empty">

@@ -105,6 +105,43 @@ public class DocumentServiceTests
     }
 
     [Fact]
+    public async Task Delete_RemovesDocumentAndStoredFile()
+    {
+        var uploaded = await Upload("manual.pdf", Pdf());
+
+        var deleted = await _service.DeleteAsync(uploaded.Id);
+
+        Assert.True(deleted);
+        Assert.Empty(_repository.Documents);
+        Assert.Empty(_storage.Files);
+    }
+
+    [Fact]
+    public async Task Delete_UnknownDocument_ReturnsFalse()
+    {
+        Assert.False(await _service.DeleteAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task Delete_WhileProcessing_ThrowsConflict_AndKeepsDocument()
+    {
+        var document = await SavedDocumentWithStatus(DocumentStatus.Processing);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _service.DeleteAsync(document.Id));
+        Assert.Single(_repository.Documents);
+    }
+
+    [Theory]
+    [InlineData(DocumentStatus.Ready)]
+    [InlineData(DocumentStatus.Failed)]
+    public async Task Delete_ReadyOrFailedDocument_IsAllowed(DocumentStatus status)
+    {
+        var document = await SavedDocumentWithStatus(status);
+
+        Assert.True(await _service.DeleteAsync(document.Id));
+    }
+
+    [Fact]
     public async Task GetChunks_ReturnsChunksInOrder_OrNullForUnknownDocument()
     {
         var document = await SavedDocumentWithStatus(DocumentStatus.Ready);

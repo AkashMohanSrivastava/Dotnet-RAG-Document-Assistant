@@ -63,6 +63,10 @@ export async function uploadDocument(file: File): Promise<DocumentDto> {
   return response.json()
 }
 
+export async function deleteDocument(id: string): Promise<void> {
+  await ensureOk(await fetch(`/api/documents/${id}`, { method: 'DELETE' }))
+}
+
 export async function reprocessDocument(id: string): Promise<void> {
   await ensureOk(await fetch(`/api/documents/${id}/process`, { method: 'POST' }))
 }

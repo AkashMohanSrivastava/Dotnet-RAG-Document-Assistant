@@ -52,6 +52,14 @@ public class DocumentsController(DocumentService documentService) : ControllerBa
     }
 
     /// <summary>Queues a failed (or still waiting) document for processing again.</summary>
+    /// <summary>Deletes the document with its chunks and stored file.</summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken) =>
+        await documentService.DeleteAsync(id, cancellationToken) ? NoContent() : NotFound();
+
     [HttpPost("{id:guid}/process")]
     [ProducesResponseType<DocumentDto>(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

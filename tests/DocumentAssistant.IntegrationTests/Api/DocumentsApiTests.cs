@@ -187,6 +187,27 @@ public sealed class DocumentsApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Delete_RemovesDocumentChunksAndFile_FromSearchToo()
+    {
+        var created = await UploadAsync("deleteme.pdf", TestPdfs.Create(["Quixotic zebrafish maintenance guide."]));
+        Assert.Equal("Ready", (await WaitForFinalStatusAsync(created.Id)).Status);
+        var storedFile = Path.Combine(_storageRoot, DocumentService.StorageKeyFor(created.Id));
+        Assert.True(File.Exists(storedFile));
+
+        var response = await _client.DeleteAsync($"/api/documents/{created.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync($"/api/documents/{created.Id}")).StatusCode);
+        Assert.False(File.Exists(storedFile));
+
+        // Its chunks are gone, so search can't find its unique words any more.
+        var search = await _client.GetFromJsonAsync<SearchResponse>("/api/search?q=quixotic zebrafish&mode=keyword", JsonOptions);
+        Assert.DoesNotContain(search!.Results, r => r.DocumentId == created.Id);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.DeleteAsync($"/api/documents/{created.Id}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Ask_WithoutQuestion_Returns400()
     {
         var response = await _client.PostAsJsonAsync("/api/ask", new { question = "" });

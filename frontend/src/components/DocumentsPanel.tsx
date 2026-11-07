@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { type DocumentDto, listDocuments, reprocessDocument, uploadDocument } from '../api'
+import { deleteDocument, type DocumentDto, listDocuments, reprocessDocument, uploadDocument } from '../api'
 
 interface Props {
   selectedId: string | null
@@ -54,6 +54,17 @@ export function DocumentsPanel({ selectedId, onSelect }: Props) {
     }
   }
 
+  async function remove(d: DocumentDto) {
+    if (!confirm(`Delete "${d.fileName}"? Its file and search data are removed permanently.`)) return
+    try {
+      await deleteDocument(d.id)
+      if (selectedId === d.id) onSelect(null)
+      setDocuments(docs => docs.filter(x => x.id !== d.id))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   return (
     <aside className="documents">
       <h2>Documents</h2>
@@ -77,15 +88,24 @@ export function DocumentsPanel({ selectedId, onSelect }: Props) {
           </button>
         </li>
         {documents.map(d => (
-          <li key={d.id}>
+          <li key={d.id} className="document-row">
             <button
               className={`document ${selectedId === d.id ? 'selected' : ''}`}
               disabled={d.status !== 'Ready'}
               onClick={() => onSelect(d.id)}
-              title={d.failureReason ?? undefined}
+              title={d.failureReason ?? d.fileName}
             >
               <span className="name">{d.fileName}</span>
               <span className={`status status-${d.status.toLowerCase()}`}>{d.status}</span>
+            </button>
+            <button
+              className="delete"
+              disabled={d.status === 'Processing'}
+              onClick={() => remove(d)}
+              title={d.status === 'Processing' ? 'Wait until processing has finished' : `Delete ${d.fileName}`}
+              aria-label={`Delete ${d.fileName}`}
+            >
+              ×
             </button>
             {d.status === 'Failed' && (
               <div className="failure">

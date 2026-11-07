@@ -106,6 +106,30 @@ public class DocumentService(
     }
 
     /// <summary>Returns null if the document does not exist.</summary>
+    /// <summary>
+    /// Deletes a document, its chunks and its stored file. Returns false if the document does not exist.
+    /// </summary>
+    /// <exception cref="ConflictException">The document is being processed right now.</exception>
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var document = await repository.GetByIdAsync(id, cancellationToken);
+        if (document is null)
+            return false;
+
+        // The worker is writing chunks for it; deleting now would make its final save fail.
+        if (document.Status == DocumentStatus.Processing)
+            throw new ConflictException("The document is being processed. Try again when it has finished.");
+
+        repository.Remove(document);
+        await repository.SaveChangesAsync(cancellationToken);
+
+        // The database is the source of truth; a leftover file is harmless, so don't fail the request over it.
+        await TryDeleteFileAsync(StorageKeyFor(id));
+
+        logger.LogInformation("Deleted document {DocumentId} ({FileName})", id, document.FileName);
+        return true;
+    }
+
     public async Task<IReadOnlyList<ChunkDto>?> GetChunksAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (await repository.GetByIdAsync(id, cancellationToken) is null)

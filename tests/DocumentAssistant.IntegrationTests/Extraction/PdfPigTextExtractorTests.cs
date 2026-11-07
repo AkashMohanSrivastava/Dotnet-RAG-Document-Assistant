@@ -53,6 +53,44 @@ public class PdfPigTextExtractorTests
         Assert.Contains("no extractable text", ex.Message);
     }
 
+    private const string ParagraphOfText = "This page contains a full sentence of real, extractable text.";
+
+    [Fact]
+    public async Task MostlyImagePdf_IsRejected_WithPageCounts()
+    {
+        // Like a similarity-report export: text on the cover and the last page, page images with
+        // stray markers ("1") everywhere else.
+        var pages = new List<string[]> { new[] { ParagraphOfText } };
+        pages.AddRange(Enumerable.Range(0, 8).Select(_ => new[] { "1" }));
+        pages.Add([ParagraphOfText]);
+
+        var ex = await Assert.ThrowsAsync<TextExtractionException>(() => Extract(TestPdfs.Create(pages.ToArray())));
+
+        Assert.StartsWith("Only 2 of 10 pages contain extractable text.", ex.Message);
+    }
+
+    [Fact]
+    public async Task SomeBlankPages_AreFine_WhenMostPagesHaveText()
+    {
+        // 6 text pages, 4 blank or near-blank (section dividers, page numbers): still a text PDF.
+        var pages = Enumerable.Range(0, 6).Select(_ => new[] { ParagraphOfText })
+            .Concat(new string[][] { [], ["12"], [], ["iv"] })
+            .ToArray();
+
+        var result = await Extract(TestPdfs.Create(pages));
+
+        Assert.Equal(10, result.Pages.Count);
+    }
+
+    [Fact]
+    public async Task ShortDocuments_SkipTheImageCheck()
+    {
+        // 1 of 3 pages has text: too few pages to judge, so it's accepted.
+        var result = await Extract(TestPdfs.Create([ParagraphOfText], [], ["7"]));
+
+        Assert.Equal(3, result.Pages.Count);
+    }
+
     [Fact]
     public async Task CorruptPdf_ThrowsTextExtractionException()
     {
