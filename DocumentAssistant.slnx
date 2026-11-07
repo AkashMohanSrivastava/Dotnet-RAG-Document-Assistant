@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DocumentAssistant.Api/DocumentAssistant.Api.csproj" />
+    <Project Path="src/DocumentAssistant.Application/DocumentAssistant.Application.csproj" />
+    <Project Path="src/DocumentAssistant.Domain/DocumentAssistant.Domain.csproj" />
+    <Project Path="src/DocumentAssistant.Infrastructure/DocumentAssistant.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DocumentAssistant.IntegrationTests/DocumentAssistant.IntegrationTests.csproj" />
+    <Project Path="tests/DocumentAssistant.UnitTests/DocumentAssistant.UnitTests.csproj" />
+  </Folder>
+</Solution>
